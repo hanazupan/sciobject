@@ -102,7 +102,7 @@ class ScientificObject(ABC):
         self.use_saved = use_saved
         self.use_logger = use_logger
 
-        class_name = self.__class__.__name__
+        self.class_name = self.__class__.__name__
 
         # enter the object in the logbook. Two things can happen:
         # a) a new class_index will be given if self.use_saved=False or if there is no entry in the logbook with the
@@ -111,17 +111,28 @@ class ScientificObject(ABC):
         # same parameters
         my_parameter_names = _get_arg_names_method(self.__init__, **kwargs)
         my_parameter_values = _get_arg_values_method(*args, **kwargs)
-        self.class_logbook = ClassLogbook(class_name, my_parameter_names)
+        self.class_logbook = ClassLogbook(self.class_name, my_parameter_names)
         self.class_index = self.class_logbook.get_class_index(self.use_saved, my_parameter_names, my_parameter_values)
 
+        self.name = f"{self.class_name}_{self.class_index:05d}"
+
         if self.use_logger:
-            logging.basicConfig(filename=f"{PATH_OUTPUT_LOGGING}{class_name}_{self.class_index}", level="INFO")
-            self.logger = logging.getLogger(class_name)
-            self.logger.info(f"SET UP OF: {class_name}")
+            self.logger = logging.getLogger(self.name)
+            self.logger.setLevel(logging.INFO)
+            # create file handler which logs even debug messages
+            fh = logging.FileHandler(f"{PATH_OUTPUT_LOGGING}{self.name}.log")
+            fh.setLevel(logging.INFO)
+            self.logger.addHandler(fh)
 
-    def init_logger(self):
-        pass
+            #logging.basicConfig(filename=f"{PATH_OUTPUT_LOGGING}{self.name}.log",
+            #                    level="INFO", format='%(levelname)s:%(message)s')
+            print(f"my name is {self.name}")
+            self.logger.info(f"SET UP OF: {self.name}")
+            for n, v in zip(my_parameter_names, my_parameter_values):
+                self.logger.info(f"{n}={v}")
 
+    def get_name(self):
+        return self.name
 
     def log_ran_method(self, my_method, time, *args, **kwargs):
         """
@@ -166,8 +177,7 @@ if __name__ == "__main__":
 
     eo1 = ExampleObject(22, random_kwarg="randomness", use_saved=False)
     eo2 = ExampleObject(99, random_kwarg="randomness", yet_another=17, use_saved = False)
-    print(eo2.class_logbook.get_current_logbook())
-    print(eo1.class_logbook.get_current_logbook())
     print(eo1.class_index, eo2.class_index)
+    print(eo1.get_name(), eo2.get_name())
     #eo1.example_method(15)
     #eo1.example_method(17, 3)

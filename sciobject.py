@@ -7,20 +7,21 @@ import logging
 
 import numpy as np
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 PATH_OUTPUT_LOGGING = "data/logging/"
 PATH_OUTPUT_AUTOSAVE = "data/autosave/"
 PATH_OUTPUT_LOGBOOK = "data/logbook/"
 
-def _get_arg_dict_method(my_method, *args, **kwargs):
-    names = list(inspect.getfullargspec(my_method).args[1:])
-    names.extend(kwargs.keys())
-    values = list(args[1:])
-    defaults = inspect.getfullargspec(my_method).defaults
-    if any(defaults):
-        values.extend(defaults)
+def _get_arg_values_method(*args, **kwargs) -> list:
+    values = list(args)
     values.extend(kwargs.values())
-    return {n:v for n, v in zip(names, values)}
+    return values
+
+def _get_arg_names_method(my_method, **kwargs) -> list:
+    names = list(inspect.getfullargspec(my_method).args[1:])
+    names.extend([k for k in kwargs.keys() if k not in names])
+    return names
 
 
 class ClassLogbook:
@@ -30,48 +31,62 @@ class ClassLogbook:
     keeps recording all instances of this object and its given input parameters.
     """
 
-    def __init__(self, class_name: str):
+    def __init__(self, class_name: str, class_parameter_names: list = None):
         self.class_name = class_name
+        self.class_parameter_names = class_parameter_names
         self.class_logbook_path = f"{PATH_OUTPUT_LOGBOOK}{self.class_name}.csv"
         self.current_logbook = self._load_current_logbook()
 
     def _load_current_logbook(self) -> pd.DataFrame:
         try:
-            return pd.read_csv(self.class_logbook_path, index_col=0)
-        except FileNotFoundError:
+            read_csv = pd.read_csv(self.class_logbook_path, index_col=0)
+            self.class_parameter_names = read_csv.columns
+            return read_csv
+        except (FileNotFoundError, EmptyDataError):
             open(self.class_logbook_path, mode="w").close()
-            return pd.DataFrame()
+            return pd.DataFrame(columns=self.class_parameter_names)
+
+    def get_current_logbook(self):
+        return self._load_current_logbook()
 
 
-    def get_class_index(self, use_saved: bool, parameter_names_values: dict):
-        #new_entry = self._get_new_entry(parameter_names_values)
-        new_entry = pd.Series(parameter_names_values)
-        print(new_entry)
-        for index, data in self.current_logbook.iterrows():
-            print(new_entry.equals(data))
-        # if use_saved is True:
-        #     print("where", self.current_logbook.where("param1"==19).index)
-        #     #saved_index = self.class_logbook._search_class_index()
-        #     #if saved_index is not None:
-        #     #    return saved_index
-        # #self._record_new_entry()
-        return len(self.current_logbook)
+    def get_class_index(self, use_saved: bool, parameter_names: list, parameter_values: list):
+        assert len(parameter_names)==len(parameter_values)
+        parameter_names_values = {n:v for n, v in zip(parameter_names, parameter_values)}
+        new_entry = self._get_new_entry(parameter_names_values)
+        print("NEW ENTRY", new_entry)
+        if use_saved is True:
+            # try finding an existing set of data
+            existing_index = None
+            for index, data in self.current_logbook.iterrows():
+                for i, r in new_entry.iterrows():
+                    if r.equals(data):
+                        existing_index = index
+            if existing_index is not None:
+                return existing_index
+        # if not use_saved or doesn't exist yet, create new entry
+        self._record_new_entry(new_entry)
+        return len(self.current_logbook) - 1  # minus 1 because we just added this new one
 
     def _get_new_entry(self, parameter_names_values: dict):
-        new_index = len(self.current_logbook)
-        new_entry = pd.DataFrame.from_dict({new_index: parameter_names_values.values()},
-                                           orient='index', columns=parameter_names_values.keys())
-        return new_entry
+        current_len = len(self.current_logbook)
+        empty_df = pd.DataFrame(columns=self.class_parameter_names)
+        for existing_title in self.class_parameter_names:
+            empty_df.loc[current_len, existing_title] = np.NaN
+        for title, data in parameter_names_values.items():
+            empty_df.loc[current_len, title] = data
+        return empty_df
 
     def _record_new_entry(self, new_entry: pd.DataFrame):
         self.current_logbook = pd.concat([self.current_logbook, new_entry])
-        print(self.current_logbook)
         # update the file immediately
         self.current_logbook.to_csv(self.class_logbook_path)
+        self.current_logbook = self._load_current_logbook()
+
 
 class ScientificObject(ABC):
 
-    def __init__(self, use_saved: bool = True, use_logger: bool = True):
+    def __init__(self, *args, use_saved: bool = True, use_logger: bool = True, **kwargs):
         """
         A ScientificObject knows that scientific calculations sometimes take a long time and depend on a ton of
         parameters. That is why this class offers a logger that records parameters of the class and every performed
@@ -94,10 +109,10 @@ class ScientificObject(ABC):
         # same parameters
         # b) an existing class_index will be given if self.use_saved=True AND there is an entry in the logbook with the
         # same parameters
-        self.class_logbook = ClassLogbook(class_name, self.use_saved)
-        self.class_index = self.class_logbook.get_class_index(use_saved, use_logger)
-
-
+        my_parameter_names = _get_arg_names_method(self.__init__, **kwargs)
+        my_parameter_values = _get_arg_values_method(*args, **kwargs)
+        self.class_logbook = ClassLogbook(class_name, my_parameter_names)
+        self.class_index = self.class_logbook.get_class_index(self.use_saved, my_parameter_names, my_parameter_values)
 
         if self.use_logger:
             logging.basicConfig(filename=f"{PATH_OUTPUT_LOGGING}{class_name}_{self.class_index}", level="INFO")
@@ -139,20 +154,20 @@ class ScientificObject(ABC):
 
 class ExampleObject(ScientificObject):
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, some_arg, some_kwarg=15, **kwargs):
+        super().__init__(some_arg, some_kwarg=some_kwarg, **kwargs)
 
     def example_method(self, one_arg, one_kwarg = 7):
         pass
 
 
 if __name__ == "__main__":
-    my_logbook = ClassLogbook("SomeClass")
-    my_logbook._record_new_entry({"param1": 17, "param2": tuple([3.0, "ab"])})
-    my_logbook._record_new_entry({"param1": 19, "param2": tuple([18, "ab"]),
-                                                                "param3": None})
-    my_logbook.get_class_index(True, {"param1": 19, "param2": tuple([18, "ab"]),
-                                                                "param3": None})
-    #eo1 = ExampleObject()
+    my_logbook = ClassLogbook("SomeClass", ["param1", "param2"])
+
+    eo1 = ExampleObject(22, random_kwarg="randomness", use_saved=False)
+    eo2 = ExampleObject(99, random_kwarg="randomness", yet_another=17, use_saved = False)
+    print(eo2.class_logbook.get_current_logbook())
+    print(eo1.class_logbook.get_current_logbook())
+    print(eo1.class_index, eo2.class_index)
     #eo1.example_method(15)
     #eo1.example_method(17, 3)

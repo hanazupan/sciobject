@@ -1,9 +1,11 @@
+import pickle
 from abc import ABC
 import os
-import time
+from time import time
 from datetime import timedelta
 import inspect
 import logging
+from functools import wraps
 
 import numpy as np
 import pandas as pd
@@ -39,7 +41,7 @@ class ClassLogbook:
 
     def _load_current_logbook(self) -> pd.DataFrame:
         try:
-            read_csv = pd.read_csv(self.class_logbook_path, index_col=0)
+            read_csv = pd.read_csv(self.class_logbook_path, index_col=0, dtype=object)
             self.class_parameter_names = read_csv.columns
             return read_csv
         except (FileNotFoundError, EmptyDataError):
@@ -54,13 +56,12 @@ class ClassLogbook:
         assert len(parameter_names)==len(parameter_values)
         parameter_names_values = {n:v for n, v in zip(parameter_names, parameter_values)}
         new_entry = self._get_new_entry(parameter_names_values)
-        print("NEW ENTRY", new_entry)
         if use_saved is True:
             # try finding an existing set of data
             existing_index = None
             for index, data in self.current_logbook.iterrows():
-                for i, r in new_entry.iterrows():
-                    if r.equals(data):
+                for i, row in new_entry.iterrows():
+                    if row.equals(data):
                         existing_index = index
             if existing_index is not None:
                 return existing_index
@@ -75,6 +76,8 @@ class ClassLogbook:
             empty_df.loc[current_len, existing_title] = np.NaN
         for title, data in parameter_names_values.items():
             empty_df.loc[current_len, title] = data
+        empty_df.to_csv(f"{PATH_OUTPUT_AUTOSAVE}temp.csv")
+        empty_df = pd.read_csv(f"{PATH_OUTPUT_AUTOSAVE}temp.csv", index_col=0, dtype=object)
         return empty_df
 
     def _record_new_entry(self, new_entry: pd.DataFrame):
@@ -123,10 +126,6 @@ class ScientificObject(ABC):
             fh = logging.FileHandler(f"{PATH_OUTPUT_LOGGING}{self.name}.log")
             fh.setLevel(logging.INFO)
             self.logger.addHandler(fh)
-
-            #logging.basicConfig(filename=f"{PATH_OUTPUT_LOGGING}{self.name}.log",
-            #                    level="INFO", format='%(levelname)s:%(message)s')
-            print(f"my name is {self.name}")
             self.logger.info(f"SET UP OF: {self.name}")
             for n, v in zip(my_parameter_names, my_parameter_values):
                 self.logger.info(f"{n}={v}")
@@ -134,33 +133,62 @@ class ScientificObject(ABC):
     def get_name(self):
         return self.name
 
-    def log_ran_method(self, my_method, time, *args, **kwargs):
-        """
-        Every time a method has been run you want to record the arguments that were used.
-
-        Args:
-            my_method ():
-            *args ():
-            *kwargs ():
-
-        Returns:
-
-        """
-        if self.use_logger:
+    def sci_method(my_method):
+        @wraps(my_method)
+        def decorated(self, *args, **kwargs):
+            # determine method index
             names = list(inspect.getfullargspec(my_method).args[1:])
             names.extend(kwargs.keys())
-            values = list(args[1:])
+            values = list(args)
             defaults = inspect.getfullargspec(my_method).defaults
             if any(defaults):
                 values.extend(defaults)
             values.extend(kwargs.values())
-            my_text = ""
-            for n, v in zip(names, values):
-                my_text += f"{n}={v}, "
-            self.logger.info(f"RAN THE METHOD {my_method.__name__}")
-            self.logger.info(f"Arguments of the method: {my_text}")
-            self.logger.info(f"Hash of this method run is {hash(tuple(values))}.")
-            self.logger.info(f"Runtime of the method is {timedelta(seconds=time)} hours:minutes:seconds")
+            my_method_logbook = ClassLogbook(f"{self.get_name()}_{my_method.__name__}", names)
+            my_method_index = my_method_logbook.get_class_index(self.use_saved, names, values)
+
+            my_path = f"{PATH_OUTPUT_AUTOSAVE}{self.get_name()}_{my_method.__name__}_{my_method_index:05d}"
+
+            # try to find a suitable saved file
+            if self.use_saved:
+                if os.path.isfile(f"{my_path}.npy"):
+                    return np.load(f"{my_path}.npy")
+                elif os.path.isfile(f"{my_path}.csv"):
+                    return pd.read_csv(f"{my_path}.csv", index_col=0)
+                elif os.path.isfile(my_path):
+                    with open(my_path, 'rb') as f:
+                        loaded_data = pickle.load(f)
+                    return loaded_data
+
+
+            # actually running
+            t1 = time()
+            output = my_method(self, *args, **kwargs)
+            t2 = time()
+
+
+
+            if self.use_logger:
+
+                my_text = ""
+                for n, v in zip(names, values):
+                    my_text += f"\n{n}={v}"
+                self.logger.info(f" ###### RAN THE METHOD {my_method.__name__} ###### ")
+                self.logger.info(f"Arguments of the method: {my_text}")
+                self.logger.info(f"Method output is available at: {my_path}")
+                self.logger.info(f"Runtime of the method is {timedelta(seconds=t2-t1)} hours:minutes:seconds")
+
+            # dumping output
+            if isinstance(output, pd.DataFrame):
+                output.to_csv(f"{my_path}.csv", index=True)
+            elif isinstance(output, np.ndarray):
+                np.save(f"{my_path}.npy", output)
+            else:
+                with open(my_path, 'wb') as f:
+                    pickle.dump(output, f)
+            return output
+        return decorated
+
 
 
 class ExampleObject(ScientificObject):
@@ -168,16 +196,18 @@ class ExampleObject(ScientificObject):
     def __init__(self, some_arg, some_kwarg=15, **kwargs):
         super().__init__(some_arg, some_kwarg=some_kwarg, **kwargs)
 
-    def example_method(self, one_arg, one_kwarg = 7):
-        pass
+    @ScientificObject.sci_method
+    def example_method(self, one_arg, weird, one_kwarg = 7):
+        return 2*one_arg + one_kwarg + weird**2
 
 
 if __name__ == "__main__":
     my_logbook = ClassLogbook("SomeClass", ["param1", "param2"])
 
-    eo1 = ExampleObject(22, random_kwarg="randomness", use_saved=False)
-    eo2 = ExampleObject(99, random_kwarg="randomness", yet_another=17, use_saved = False)
-    print(eo1.class_index, eo2.class_index)
-    print(eo1.get_name(), eo2.get_name())
+    eo1 = ExampleObject(22, random_kwarg="randomness", use_saved=True)
+    eo2 = ExampleObject(99, random_kwarg="randomness", yet_another=17, use_saved = True)
+    print(eo1.example_method(97, 11))
+    print(eo1.example_method(77, 8, one_kwarg=88888))
+    print(eo1.example_method(97, 11))
     #eo1.example_method(15)
     #eo1.example_method(17, 3)

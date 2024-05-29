@@ -42,10 +42,10 @@ import numpy as np
 import pandas as pd
 from pandas.errors import EmptyDataError
 
-PATH_OUTPUT_LOGGING = "data/logging/"
-PATH_OUTPUT_AUTOSAVE = "data/autosave/"
-PATH_OUTPUT_LOGBOOK = "data/logbook/"
-PATH_OUTPUT_METHODBOOK = "data/methodbook/"
+PATH_OUTPUT_LOGGING = "output/data/logging/"
+PATH_OUTPUT_AUTOSAVE = "output/data/autosave/"
+PATH_OUTPUT_LOGBOOK = "output/data/logbook/"
+PATH_OUTPUT_METHODBOOK = "output/data/methodbook/"
 
 LOGGING_PATHS = [PATH_OUTPUT_LOGGING, PATH_OUTPUT_AUTOSAVE, PATH_OUTPUT_LOGBOOK, PATH_OUTPUT_METHODBOOK]
 

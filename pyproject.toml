@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "scipbject"
-version = "0.0.1"
+name = "sciobject"
+version = "0.0.2"
 description = "Abstract objects that save and log calculations."
-authors = ["Hana Zupan <hana.zupan@fu-berlin.de>"]
+authors = ["Hana Zupan <h.zupan@fu-berlin.de>"]
 license = "LICENSE"
 readme = "README.md"
 keywords = ["scientific computing", "logging"]

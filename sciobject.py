@@ -232,7 +232,7 @@ def sci_method(my_method: Callable):
         the output of my_method
     """
     @wraps(my_method)
-    def decorated(*args, return_method_name: bool = False, **kwargs):
+    def decorated(*args, return_method_name: bool = False, print_info: bool = False, **kwargs):
         """
         The args and kwargs will be passes to my_method and its output will be returned. For more details see the
         description of the sci_method wrapper.
@@ -279,16 +279,24 @@ def sci_method(my_method: Callable):
         output = my_method(self, *args, **kwargs)
         t2 = time()
 
-        if self.use_logger:
+        my_text = ""
+        for n, v in zip(names, values):
+            my_text += f"\n{n}={v}"
 
-            my_text = ""
-            for n, v in zip(names, values):
-                my_text += f"\n{n}={v}"
+        if self.use_logger:
             self.logger.info(f" ###### RAN THE METHOD {my_method.__name__} ###### ")
             self.logger.info(f"Run started at {str(datetime.now())}")
             self.logger.info(f"Arguments of the method: {my_text}")
             self.logger.info(f"Method output is available at: {my_path}")
             self.logger.info(f"Runtime of the method is {timedelta(seconds=t2 - t1)} hours:minutes:seconds")
+
+        if print_info:
+            print(f" ###### RAN THE METHOD {my_method.__name__} ###### ")
+            print(f"Run started at {str(datetime.now())}")
+            print(f"Arguments of the method: {my_text}")
+            print(f"Method output is available at: {my_path}")
+            print(f"Output of the method is {output}")
+            print(f"Runtime of the method is {timedelta(seconds=t2 - t1)} hours:minutes:seconds")
 
         # dumping output
         if isinstance(output, pd.DataFrame):

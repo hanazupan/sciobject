@@ -7,6 +7,7 @@ def test_autosave():
 
     # if use_saved should be exactly like the saved file
 
+
 class ExampleObject(ScientificObject):
 
     def __init__(self, some_arg, some_kwarg=15, **kwargs):

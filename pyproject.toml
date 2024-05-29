@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "scipbject"
+version = "0.0.1"
+description = "Abstract objects that save and log calculations."
+authors = ["Hana Zupan <hana.zupan@fu-berlin.de>"]
+license = "LICENSE"
+readme = "README.md"
+keywords = ["scientific computing", "logging"]
+repository = "https://github.com/hanazupan/sciobject"
+homepage = "https://www.bcp.fu-berlin.de/en/chemie/chemie/forschung/PhysTheoChem/agkeller/index.html"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+numpy = "~=1.25.2"
+pandas = "~=2.0.3"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+#requires = {file = "requirements.txt"}#["poetry-core"]
+build-backend = "poetry.core.masonry.api"

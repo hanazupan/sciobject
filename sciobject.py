@@ -26,6 +26,66 @@ def _get_arg_names_method(my_method, **kwargs) -> list:
     return names
 
 
+def sci_method(my_method):
+    @wraps(my_method)
+    def decorated(*args, **kwargs):
+        self = args[0]
+        args = args[1:]
+        # determine method index
+        names = list(inspect.getfullargspec(my_method).args[1:])
+        names.extend(kwargs.keys())
+        values = list(args)
+        defaults = inspect.getfullargspec(my_method).defaults
+        if any(defaults):
+            values.extend(defaults)
+        values.extend(kwargs.values())
+        my_method_logbook = ClassLogbook(f"{self.get_name()}_{my_method.__name__}", names)
+        my_method_index = my_method_logbook.get_class_index(self.use_saved, names, values)
+
+        my_path = f"{PATH_OUTPUT_AUTOSAVE}{self.get_name()}_{my_method.__name__}_{my_method_index:05d}"
+        print(my_path, self.use_saved)
+
+        # try to find a suitable saved file
+        if self.use_saved:
+            if os.path.isfile(f"{my_path}.npy"):
+                return np.load(f"{my_path}.npy")
+            elif os.path.isfile(f"{my_path}.csv"):
+                return pd.read_csv(f"{my_path}.csv", index_col=0)
+            elif os.path.isfile(my_path):
+                with open(my_path, 'rb') as f:
+                    loaded_data = pickle.load(f)
+                print("loaded", loaded_data)
+                return loaded_data
+
+
+        # actually running
+        t1 = time()
+        output = my_method(self, *args, **kwargs)
+        t2 = time()
+
+
+        if self.use_logger:
+
+            my_text = ""
+            for n, v in zip(names, values):
+                my_text += f"\n{n}={v}"
+            self.logger.info(f" ###### RAN THE METHOD {my_method.__name__} ###### ")
+            self.logger.info(f"Arguments of the method: {my_text}")
+            self.logger.info(f"Method output is available at: {my_path}")
+            self.logger.info(f"Runtime of the method is {timedelta(seconds=t2-t1)} hours:minutes:seconds")
+
+        # dumping output
+        if isinstance(output, pd.DataFrame):
+            output.to_csv(f"{my_path}.csv", index=True)
+        elif isinstance(output, np.ndarray):
+            np.save(f"{my_path}.npy", output)
+        else:
+            with open(my_path, 'wb') as f:
+                pickle.dump(output, f)
+        return output
+    return decorated
+
+
 class ClassLogbook:
 
     """
@@ -133,79 +193,32 @@ class ScientificObject(ABC):
     def get_name(self):
         return self.name
 
-    def sci_method(my_method):
-        @wraps(my_method)
-        def decorated(self, *args, **kwargs):
-            # determine method index
-            names = list(inspect.getfullargspec(my_method).args[1:])
-            names.extend(kwargs.keys())
-            values = list(args)
-            defaults = inspect.getfullargspec(my_method).defaults
-            if any(defaults):
-                values.extend(defaults)
-            values.extend(kwargs.values())
-            my_method_logbook = ClassLogbook(f"{self.get_name()}_{my_method.__name__}", names)
-            my_method_index = my_method_logbook.get_class_index(self.use_saved, names, values)
-
-            my_path = f"{PATH_OUTPUT_AUTOSAVE}{self.get_name()}_{my_method.__name__}_{my_method_index:05d}"
-
-            # try to find a suitable saved file
-            if self.use_saved:
-                if os.path.isfile(f"{my_path}.npy"):
-                    return np.load(f"{my_path}.npy")
-                elif os.path.isfile(f"{my_path}.csv"):
-                    return pd.read_csv(f"{my_path}.csv", index_col=0)
-                elif os.path.isfile(my_path):
-                    with open(my_path, 'rb') as f:
-                        loaded_data = pickle.load(f)
-                    return loaded_data
-
-
-            # actually running
-            t1 = time()
-            output = my_method(self, *args, **kwargs)
-            t2 = time()
-
-
-
-            if self.use_logger:
-
-                my_text = ""
-                for n, v in zip(names, values):
-                    my_text += f"\n{n}={v}"
-                self.logger.info(f" ###### RAN THE METHOD {my_method.__name__} ###### ")
-                self.logger.info(f"Arguments of the method: {my_text}")
-                self.logger.info(f"Method output is available at: {my_path}")
-                self.logger.info(f"Runtime of the method is {timedelta(seconds=t2-t1)} hours:minutes:seconds")
-
-            # dumping output
-            if isinstance(output, pd.DataFrame):
-                output.to_csv(f"{my_path}.csv", index=True)
-            elif isinstance(output, np.ndarray):
-                np.save(f"{my_path}.npy", output)
-            else:
-                with open(my_path, 'wb') as f:
-                    pickle.dump(output, f)
-            return output
-        return decorated
-
-
-
 class ExampleObject(ScientificObject):
 
     def __init__(self, some_arg, some_kwarg=15, **kwargs):
         super().__init__(some_arg, some_kwarg=some_kwarg, **kwargs)
 
-    @ScientificObject.sci_method
-    def example_method(self, one_arg, weird, one_kwarg = 7):
+    @sci_method
+    def example_method(self, one_arg: float, weird: float, one_kwarg = 7):
+        """
+
+        :param one_arg:
+        :type one_arg:
+        :param weird:
+        :type weird:
+        :param one_kwarg:
+        :type one_kwarg:
+        :return:
+        :rtype:
+        """
         return 2*one_arg + one_kwarg + weird**2
 
 
 if __name__ == "__main__":
     my_logbook = ClassLogbook("SomeClass", ["param1", "param2"])
 
-    eo1 = ExampleObject(22, random_kwarg="randomness", use_saved=True)
-    eo2 = ExampleObject(99, random_kwarg="randomness", yet_another=17, use_saved = True)
+    eo1 = ExampleObject(22, random_kwarg="randomness", use_saved=False)
+    print(eo1.get_name())
     print(eo1.example_method(97, 11))
     print(eo1.example_method(77, 8, one_kwarg=88888))
     print(eo1.example_method(97, 11))
